@@ -99,7 +99,7 @@ then
     MONGO_CMD="mongo $MONGODB_ADDR $MONGO_AUTH "
   fi
 else
-  MONGO_AUTH=
+  MONGO_AUTH=""
   MONGO_CMD="mongo $MONGODB_ADDR"
 fi
 
@@ -116,27 +116,36 @@ echo $DIR
 DATE=$(date -u "+%F-%H%M%S")
 FILE_NAME="backup-$DATE"
 ARCHIVE_NAME="$FILE_NAME.tar.gz"
+BACKUP_DIR=$DIR/backup
+mkdir -p $BACKUP_DIR
 
 # Lock the database
 # Note there is a bug in mongo 2.2.0 where you must touch all the databases before you run mongodump
-mongo "$MONGODB_ADDR" "$MONGO_AUTH" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
+echo $MONGODB_ADDR
+echo $MONGO_AUTH
+echo "Locking..."
+mongo $MONGODB_ADDR $MONGO_AUTH --eval "printjson(db.fsyncLock())"
+echo "Locked..."
+echo "Dumping to $BACKUP_DIR/$FILE_NAME"
 
 # Dump the database
-mongodump "$MONGODB_ADDR" "$MONGO_AUTH" --out $DIR/backup/$FILE_NAME
+mongodump -h $MONGODB_ADDR $MONGO_AUTH --out $BACKUP_DIR/$FILE_NAME
+
+echo "Dumped..."
 
 # Unlock the database
-mongo "$MONGODB_ADDR" "$MONGO_AUTH" admin --eval "printjson(db.fsyncUnlock());"
+mongo $MONGODB_ADDR $MONGO_AUTH --eval "printjson(db.fsyncUnlock())"
 
 # Tar Gzip the file
-tar -C $DIR/backup/ -zcvf $DIR/backup/$ARCHIVE_NAME $FILE_NAME/
+tar -C $BACKUP_DIR/ -zcvf $BACKUP_DIR/$ARCHIVE_NAME $FILE_NAME/
 
 # Remove the backup directory
-rm -r $DIR/backup/$FILE_NAME
+rm -r $BACKUP_DIR/$FILE_NAME
 
 # Send the file to the backup drive or S3
 
 HEADER_DATE=$(date -u "+%a, %d %b %Y %T %z")
-CONTENT_MD5=$(openssl dgst -md5 -binary $DIR/backup/$ARCHIVE_NAME | openssl enc -base64)
+CONTENT_MD5=$(openssl dgst -md5 -binary $BACKUP_DIR/$ARCHIVE_NAME | openssl enc -base64)
 CONTENT_TYPE="application/x-download"
 STRING_TO_SIGN="PUT\n$CONTENT_MD5\n$CONTENT_TYPE\n$HEADER_DATE\n/$S3_BUCKET/$ARCHIVE_NAME"
 SIGNATURE=$(echo -e -n $STRING_TO_SIGN | openssl dgst -sha1 -binary -hmac $AWS_SECRET_KEY | openssl enc -base64)
@@ -147,5 +156,5 @@ curl -X PUT \
 --header "content-type: $CONTENT_TYPE" \
 --header "Content-MD5: $CONTENT_MD5" \
 --header "Authorization: AWS $AWS_ACCESS_KEY:$SIGNATURE" \
---upload-file $DIR/backup/$ARCHIVE_NAME \
+--upload-file $BACKUP_DIR/$ARCHIVE_NAME \
 https://$S3_BUCKET.s3-$S3_REGION.amazonaws.com/$ARCHIVE_NAME
