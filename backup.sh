@@ -40,7 +40,7 @@ S3_BUCKET=
 SECONDARY_ONLY=
 SKIP_AUTH=
 
-while getopts “htof:u:p:k:s:r:b:” OPTION
+while getopts “htof:u:p:k:s:r:b:a:” OPTION
 do
   case $OPTION in
     h)
