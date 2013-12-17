@@ -119,13 +119,13 @@ ARCHIVE_NAME="$FILE_NAME.tar.gz"
 
 # Lock the database
 # Note there is a bug in mongo 2.2.0 where you must touch all the databases before you run mongodump
-mongo "$MONGO_AUTH" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
+"$MONGO_CMD" "$MONGO_AUTH" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
 
 # Dump the database
 mongodump "$MONGODB_ADDR" "$MONGO_AUTH" --out $DIR/backup/$FILE_NAME
 
 # Unlock the database
-mongo "$MONGO_AUTH" admin --eval "printjson(db.fsyncUnlock());"
+"$MONGO_CMD" "$MONGO_AUTH" admin --eval "printjson(db.fsyncUnlock());"
 
 # Tar Gzip the file
 tar -C $DIR/backup/ -zcvf $DIR/backup/$ARCHIVE_NAME $FILE_NAME/
