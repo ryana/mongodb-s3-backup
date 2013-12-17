@@ -24,6 +24,8 @@ OPTIONS:
    -s      AWS Secret Key
    -r      Amazon S3 region
    -b      Amazon S3 bucket name
+   -o      Only run on secondary
+   -f      Skip auth
 EOF
 }
 
@@ -33,8 +35,10 @@ AWS_ACCESS_KEY=
 AWS_SECRET_KEY=
 S3_REGION=
 S3_BUCKET=
+SECONDARY_ONLY=
+SKIP_AUTH=
 
-while getopts “ht:u:p:k:s:r:b:” OPTION
+while getopts “htof:u:p:k:s:r:b:” OPTION
 do
   case $OPTION in
     h)
@@ -59,6 +63,12 @@ do
     b)
       S3_BUCKET=$OPTARG
       ;;
+    o)
+      SECONDARY_ONLY=true
+      ;;
+    f)
+      SKIP_AUTH=true
+      ;;
     ?)
       usage
       exit
@@ -66,10 +76,30 @@ do
   esac
 done
 
-if [[ -z $MONGODB_USER ]] || [[ -z $MONGODB_PASSWORD ]] || [[ -z $AWS_ACCESS_KEY ]] || [[ -z $AWS_SECRET_KEY ]] || [[ -z $S3_REGION ]] || [[ -z $S3_BUCKET ]]
+if [[ -z $AWS_ACCESS_KEY ]] || [[ -z $AWS_SECRET_KEY ]] || [[ -z $S3_REGION ]] || [[ -z $S3_BUCKET ]]
 then
   usage
   exit 1
+fi
+
+if [[ "$SKIP_AUTH" != "true" ]]
+then
+  if [[ -z $MONGODB_USER ]] || [[ -z $MONGODB_PASSWORD ]]
+  then
+    echo "SKIP_AUTH set to false but user & password missing..."
+    usage
+    exit 1
+  else
+    MONGO_CMD="mongo -username $MONGODB_USER -password $MONGODB_PASSWORD"
+  fi
+else
+  MONGO_CMD="mongo "
+fi
+
+if [[ "$SECONDARY_ONLY" == "true" ]] && [[ `$MONGO_CMD --quiet --eval "printjson(rs.isMaster()['ismaster'])"` == "true" ]]
+then
+  echo "Not running on master..."
+  exit 0
 fi
 
 # Get the directory the script is being run from
@@ -82,13 +112,13 @@ ARCHIVE_NAME="$FILE_NAME.tar.gz"
 
 # Lock the database
 # Note there is a bug in mongo 2.2.0 where you must touch all the databases before you run mongodump
-mongo -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
+mongo "$MONGODB_HOST" -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
 
 # Dump the database
-mongodump -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" --out $DIR/backup/$FILE_NAME
+mongodump "$MONGODB_HOST" -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" --out $DIR/backup/$FILE_NAME
 
 # Unlock the database
-mongo -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" admin --eval "printjson(db.fsyncUnlock());"
+mongo "$MONGODB_HOST" -username "$MONGODB_USER" -password "$MONGODB_PASSWORD" admin --eval "printjson(db.fsyncUnlock());"
 
 # Tar Gzip the file
 tar -C $DIR/backup/ -zcvf $DIR/backup/$ARCHIVE_NAME $FILE_NAME/
