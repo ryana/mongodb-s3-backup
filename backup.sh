@@ -18,6 +18,7 @@ This script dumps the current mongo database, tars it, then sends it to an Amazo
 
 OPTIONS:
    -h      Show this message
+   -a      Address to connect to
    -u      Mongodb user
    -p      Mongodb password
    -k      AWS Access Key
@@ -29,6 +30,7 @@ OPTIONS:
 EOF
 }
 
+MONGODB_ADDR=
 MONGODB_USER=
 MONGODB_PASSWORD=
 AWS_ACCESS_KEY=
@@ -44,6 +46,9 @@ do
     h)
       usage
       exit 1
+      ;;
+    a)
+      MONGODB_ADDR=$OPTARG
       ;;
     u)
       MONGODB_USER=$OPTARG
@@ -91,11 +96,11 @@ then
     exit 1
   else
     MONGO_AUTH=" -username $MONGODB_USER -password $MONGODB_PASSWORD "
-    MONGO_CMD="mongo $MONGO_AUTH "
+    MONGO_CMD="mongo $MONGODB_ADDR $MONGO_AUTH "
   fi
 else
   MONGO_AUTH=
-  MONGO_CMD="mongo "
+  MONGO_CMD="mongo $MONGODB_ADDR"
 fi
 
 if [[ "$SECONDARY_ONLY" == "true" ]] && [[ `$MONGO_CMD --quiet --eval "printjson(rs.isMaster()['ismaster'])"` == "true" ]]
@@ -117,7 +122,7 @@ ARCHIVE_NAME="$FILE_NAME.tar.gz"
 mongo "$MONGO_AUTH" admin --eval "var databaseNames = db.getMongo().getDBNames(); for (var i in databaseNames) { printjson(db.getSiblingDB(databaseNames[i]).getCollectionNames()) }; printjson(db.fsyncLock());"
 
 # Dump the database
-mongodump "$MONGODB_HOST" "$MONGO_AUTH" --out $DIR/backup/$FILE_NAME
+mongodump "$MONGODB_ADDR" "$MONGO_AUTH" --out $DIR/backup/$FILE_NAME
 
 # Unlock the database
 mongo "$MONGO_AUTH" admin --eval "printjson(db.fsyncUnlock());"
